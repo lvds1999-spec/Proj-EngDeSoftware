@@ -325,6 +325,124 @@ def test_tabela_participantes_relaciona_jogadores_e_partidas(app):
         assert registro["jogador_id"] == jogador_id
 
 
+def test_entrar_partida_cria_participacao_e_atualiza_contador(client, app):
+    with app.app_context():
+        db = get_db()
+        jogador_id = db.execute(
+            "INSERT INTO jogadores (nome, email, senha) VALUES (?, ?, ?)",
+            ("Jogador", "entrar@poker.com", "hash")
+        ).lastrowid
+        partida_id = db.execute(
+            "INSERT INTO partidas (nome, participantes, capacidade) VALUES (?, ?, ?)",
+            ("Mesa com uma vaga", 1, 2)
+        ).lastrowid
+        db.commit()
+
+    response = client.post(
+        f"/poker/{partida_id}/entrar?idJogador={jogador_id}"
+    )
+
+    assert response.status_code == 201
+    assert response.get_json()["dados"] == {
+        "idPartida": partida_id,
+        "idJogador": jogador_id,
+        "participantes": 2
+    }
+
+    with app.app_context():
+        db = get_db()
+        partida = db.execute(
+            "SELECT participantes FROM partidas WHERE id = ?",
+            (partida_id,)
+        ).fetchone()
+        participacao = db.execute(
+            "SELECT 1 FROM participantes WHERE partida_id = ? AND jogador_id = ?",
+            (partida_id, jogador_id)
+        ).fetchone()
+        assert partida["participantes"] == 2
+        assert participacao is not None
+
+    resposta_duplicada = client.post(
+        f"/poker/{partida_id}/entrar?idJogador={jogador_id}"
+    )
+    assert resposta_duplicada.status_code == 409
+
+
+@pytest.mark.parametrize("query,status_code", [
+    ("", 400),
+    ("?idJogador=abc", 400),
+    ("?idJogador=0", 400),
+    ("?idJogador=999", 404),
+])
+def test_entrar_partida_valida_id_jogador(client, app, query, status_code):
+    with app.app_context():
+        db = get_db()
+        partida_id = db.execute(
+            "INSERT INTO partidas (nome) VALUES (?)",
+            ("Mesa para validação",)
+        ).lastrowid
+        db.commit()
+
+    response = client.post(f"/poker/{partida_id}/entrar{query}")
+
+    assert response.status_code == status_code
+    assert response.get_json()["sucesso"] is False
+
+
+def test_entrar_partida_inexistente(client, app):
+    with app.app_context():
+        db = get_db()
+        jogador_id = db.execute(
+            "INSERT INTO jogadores (nome, email, senha) VALUES (?, ?, ?)",
+            ("Jogador", "partida-inexistente@poker.com", "hash")
+        ).lastrowid
+        db.commit()
+
+    response = client.post(f"/poker/999/entrar?idJogador={jogador_id}")
+
+    assert response.status_code == 404
+    assert "Partida não encontrada" in response.get_json()["mensagem"]
+
+
+@pytest.mark.parametrize("status,participantes,capacidade", [
+    ("aberta", 2, 2),
+    ("em_andamento", 1, 6),
+])
+def test_entrar_partida_rejeita_mesa_lotada_ou_fechada(
+    client, app, status, participantes, capacidade
+):
+    with app.app_context():
+        db = get_db()
+        jogador_id = db.execute(
+            "INSERT INTO jogadores (nome, email, senha) VALUES (?, ?, ?)",
+            ("Jogador", "rejeitado@poker.com", "hash")
+        ).lastrowid
+        partida_id = db.execute(
+            """
+            INSERT INTO partidas (nome, participantes, capacidade, status)
+            VALUES (?, ?, ?, ?)
+            """,
+            ("Mesa indisponível", participantes, capacidade, status)
+        ).lastrowid
+        db.commit()
+
+    response = client.post(
+        f"/poker/{partida_id}/entrar?idJogador={jogador_id}"
+    )
+
+    assert response.status_code == 409
+    with app.app_context():
+        db = get_db()
+        assert db.execute(
+            "SELECT 1 FROM participantes WHERE partida_id = ? AND jogador_id = ?",
+            (partida_id, jogador_id)
+        ).fetchone() is None
+        assert db.execute(
+            "SELECT participantes FROM partidas WHERE id = ?",
+            (partida_id,)
+        ).fetchone()["participantes"] == participantes
+
+
 # ============================================================================
 # TESTES DE PADRONIZAÇÃO DE RESPOSTAS E TRATAMENTO DE ERROS (Issue #1)
 # ============================================================================
