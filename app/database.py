@@ -29,8 +29,30 @@ CREATE TABLE IF NOT EXISTS participantes (
 );
 """
 
+SAMPLE_MATCHES = (
+    ("Mesa Iniciante", 1, 6, "aberta"),
+    ("Mesa Intermediária", 3, 6, "aberta"),
+    ("Mesa Lotada", 6, 6, "aberta"),
+    ("Mesa em Andamento", 4, 6, "em_andamento"),
+    ("Mesa Finalizada", 0, 6, "finalizada"),
+)
+
 def create_tables(conn):
     conn.executescript(SCHEMA)
+    conn.commit()
+
+def seed_sample_matches(conn):
+    for match in SAMPLE_MATCHES:
+        conn.execute(
+            """
+            INSERT INTO partidas (nome, participantes, capacidade, status)
+            SELECT ?, ?, ?, ?
+            WHERE NOT EXISTS (
+                SELECT 1 FROM partidas WHERE nome = ?
+            )
+            """,
+            (*match, match[0])
+        )
     conn.commit()
 
 def get_db():
@@ -60,3 +82,5 @@ def init_db(app):
     """
     with app.app_context():
         db = get_db()
+        if app.config.get("SEED_SAMPLE_DATA", False):
+            seed_sample_matches(db)

@@ -2,7 +2,7 @@ import sqlite3
 
 import pytest
 from werkzeug.security import check_password_hash
-from app.database import get_db
+from app.database import get_db, init_db
 
 # ============================================================================
 # TESTES DE CADASTRO (POST /poker/cadastro)
@@ -177,6 +177,27 @@ def test_consulta_partidas_abertas_vazio(client):
     assert dados["sucesso"] is True
     assert dados["dados"] == []
     assert dados["partidas"] == []
+
+
+def test_partidas_de_exemplo_sao_carregadas_idempotentemente(app):
+    app.config["SEED_SAMPLE_DATA"] = True
+
+    init_db(app)
+    init_db(app)
+
+    with app.app_context():
+        partidas = get_db().execute(
+            "SELECT nome, participantes, capacidade, status FROM partidas ORDER BY id"
+        ).fetchall()
+
+    assert len(partidas) == 5
+    assert [partida["nome"] for partida in partidas] == [
+        "Mesa Iniciante",
+        "Mesa Intermediária",
+        "Mesa Lotada",
+        "Mesa em Andamento",
+        "Mesa Finalizada",
+    ]
 
 
 def test_consulta_partidas_abertas_sucesso(client, app):

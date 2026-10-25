@@ -8,9 +8,11 @@ class Config:
     DATABASE_PATH = os.path.join(BASE_DIR, "poker.db")
     DEBUG = False
     TESTING = False
+    SEED_SAMPLE_DATA = False
 
 class DevelopmentConfig(Config):
     DEBUG = True
+    SEED_SAMPLE_DATA = True
 
 class TestingConfig(Config):
     TESTING = True
