@@ -116,3 +116,80 @@ def partidas_abertas():
         status_code=200
     )
 
+@poker_bp.route("/<int:id_partida>/entrar", methods=["POST"])
+def entrar_partida(id_partida):
+    """
+    Adiciona um jogador a uma partida aberta que ainda tenha vagas.
+    """
+    id_jogador_param = request.args.get("idJogador")
+    if not id_jogador_param or not re.fullmatch(r"[0-9]+", id_jogador_param):
+        return error_response(
+            "O parâmetro de consulta 'idJogador' é obrigatório e deve ser um inteiro positivo.",
+            status_code=400
+        )
+
+    id_jogador = int(id_jogador_param)
+    if id_jogador <= 0:
+        return error_response(
+            "O parâmetro de consulta 'idJogador' deve ser um inteiro positivo.",
+            status_code=400
+        )
+
+    db = get_db()
+    db.execute("BEGIN IMMEDIATE")
+
+    partida = db.execute(
+        "SELECT id, participantes, capacidade, status FROM partidas WHERE id = ?",
+        (id_partida,)
+    ).fetchone()
+    if partida is None:
+        db.rollback()
+        return error_response("Partida não encontrada.", status_code=404)
+
+    jogador = db.execute(
+        "SELECT id FROM jogadores WHERE id = ?",
+        (id_jogador,)
+    ).fetchone()
+    if jogador is None:
+        db.rollback()
+        return error_response("Jogador não encontrado.", status_code=404)
+
+    participacao = db.execute(
+        "SELECT 1 FROM participantes WHERE partida_id = ? AND jogador_id = ?",
+        (id_partida, id_jogador)
+    ).fetchone()
+    if participacao is not None:
+        db.rollback()
+        return error_response("Jogador já participa desta partida.", status_code=409)
+
+    if partida["status"] != "aberta":
+        db.rollback()
+        return error_response("Não é possível entrar em uma partida que não está aberta.", status_code=409)
+
+    if partida["participantes"] >= partida["capacidade"]:
+        db.rollback()
+        return error_response("A partida está lotada.", status_code=409)
+
+    db.execute(
+        "INSERT INTO participantes (partida_id, jogador_id) VALUES (?, ?)",
+        (id_partida, id_jogador)
+    )
+    db.execute(
+        """
+        UPDATE partidas
+        SET participantes = participantes + 1
+        WHERE id = ? AND status = 'aberta' AND participantes < capacidade
+        """,
+        (id_partida,)
+    )
+    db.commit()
+
+    return success_response(
+        dados={
+            "idPartida": id_partida,
+            "idJogador": id_jogador,
+            "participantes": partida["participantes"] + 1
+        },
+        mensagem="Jogador entrou na partida com sucesso.",
+        status_code=201
+    )
