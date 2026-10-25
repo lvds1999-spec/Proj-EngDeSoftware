@@ -167,7 +167,8 @@ python -m pytest -q
 ```
 
 Os testes cobrem cadastro e validações, hash de senha, consulta de partidas,
-integridade dos vínculos, entrada em partidas e respostas de erro.
+integridade dos vínculos, entrada de múltiplos jogadores, consistência entre o
+contador da partida e suas participações registradas, e respostas de erro.
 
 ## Atualização desta documentação
 

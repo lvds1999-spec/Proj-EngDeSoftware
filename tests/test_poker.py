@@ -332,9 +332,13 @@ def test_entrar_partida_cria_participacao_e_atualiza_contador(client, app):
             "INSERT INTO jogadores (nome, email, senha) VALUES (?, ?, ?)",
             ("Jogador", "entrar@poker.com", "hash")
         ).lastrowid
+        segundo_jogador_id = db.execute(
+            "INSERT INTO jogadores (nome, email, senha) VALUES (?, ?, ?)",
+            ("Segundo Jogador", "segundo@poker.com", "hash")
+        ).lastrowid
         partida_id = db.execute(
             "INSERT INTO partidas (nome, participantes, capacidade) VALUES (?, ?, ?)",
-            ("Mesa com uma vaga", 1, 2)
+            ("Mesa com duas vagas", 0, 2)
         ).lastrowid
         db.commit()
 
@@ -346,21 +350,36 @@ def test_entrar_partida_cria_participacao_e_atualiza_contador(client, app):
     assert response.get_json()["dados"] == {
         "idPartida": partida_id,
         "idJogador": jogador_id,
-        "participantes": 2
+        "participantes": 1
     }
+
+    segunda_entrada = client.post(
+        f"/poker/{partida_id}/entrar?idJogador={segundo_jogador_id}"
+    )
+    assert segunda_entrada.status_code == 201
+    assert segunda_entrada.get_json()["dados"]["participantes"] == 2
 
     with app.app_context():
         db = get_db()
         partida = db.execute(
             "SELECT participantes FROM partidas WHERE id = ?",
             (partida_id,)
-        ).fetchone()
-        participacao = db.execute(
-            "SELECT 1 FROM participantes WHERE partida_id = ? AND jogador_id = ?",
-            (partida_id, jogador_id)
-        ).fetchone()
-        assert partida["participantes"] == 2
-        assert participacao is not None
+        ).fetchone()["participantes"]
+        quantidade_vinculos = db.execute(
+            "SELECT COUNT(*) FROM participantes WHERE partida_id = ?",
+            (partida_id,)
+        ).fetchone()[0]
+        participacoes = db.execute(
+            "SELECT jogador_id FROM participantes WHERE partida_id = ? ORDER BY jogador_id",
+            (partida_id,)
+        ).fetchall()
+
+        assert partida == 2
+        assert quantidade_vinculos == partida
+        assert [registro["jogador_id"] for registro in participacoes] == [
+            jogador_id,
+            segundo_jogador_id
+        ]
 
     resposta_duplicada = client.post(
         f"/poker/{partida_id}/entrar?idJogador={jogador_id}"
