@@ -1,3 +1,5 @@
+import sqlite3
+
 import pytest
 from werkzeug.security import check_password_hash
 from app.database import get_db
@@ -250,6 +252,56 @@ def test_consulta_partidas_filtra_mesas_cheias_e_fechadas(client, app):
     partidas = dados["dados"]
     assert len(partidas) == 1
     assert partidas[0]["nome"] == "Mesa Aberta Com Vagas"
+
+
+def test_tabela_participantes_relaciona_jogadores_e_partidas(app):
+    """A tabela associativa deve exigir registros válidos e impedir duplicatas."""
+    with app.app_context():
+        db = get_db()
+        db.execute(
+            "INSERT INTO jogadores (nome, email, senha) VALUES (?, ?, ?)",
+            ("Jogador Teste", "jogador@poker.com", "hash")
+        )
+        jogador_id = db.execute(
+            "SELECT id FROM jogadores WHERE email = ?",
+            ("jogador@poker.com",)
+        ).fetchone()["id"]
+        db.execute(
+            "INSERT INTO partidas (nome) VALUES (?)",
+            ("Mesa Teste",)
+        )
+        partida_id = db.execute(
+            "SELECT id FROM partidas WHERE nome = ?",
+            ("Mesa Teste",)
+        ).fetchone()["id"]
+
+        db.execute(
+            "INSERT INTO participantes (partida_id, jogador_id) VALUES (?, ?)",
+            (partida_id, jogador_id)
+        )
+        with pytest.raises(sqlite3.IntegrityError):
+            db.execute(
+                "INSERT INTO participantes (partida_id, jogador_id) VALUES (?, ?)",
+                (partida_id, jogador_id)
+            )
+
+        with pytest.raises(sqlite3.IntegrityError):
+            db.execute(
+                "INSERT INTO participantes (partida_id, jogador_id) VALUES (?, ?)",
+                (partida_id, jogador_id + 1000)
+            )
+
+        with pytest.raises(sqlite3.IntegrityError):
+            db.execute(
+                "INSERT INTO participantes (partida_id, jogador_id) VALUES (?, ?)",
+                (partida_id + 1000, jogador_id)
+            )
+
+        registro = db.execute(
+            "SELECT partida_id, jogador_id FROM participantes"
+        ).fetchone()
+        assert registro["partida_id"] == partida_id
+        assert registro["jogador_id"] == jogador_id
 
 
 # ============================================================================
