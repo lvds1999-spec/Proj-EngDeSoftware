@@ -18,6 +18,15 @@ CREATE TABLE IF NOT EXISTS partidas (
     status TEXT NOT NULL DEFAULT 'aberta',
     criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS participantes (
+    partida_id INTEGER NOT NULL,
+    jogador_id INTEGER NOT NULL,
+    criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (partida_id, jogador_id),
+    FOREIGN KEY (partida_id) REFERENCES partidas (id) ON DELETE CASCADE,
+    FOREIGN KEY (jogador_id) REFERENCES jogadores (id) ON DELETE CASCADE
+);
 """
 
 def create_tables(conn):
