@@ -380,11 +380,165 @@ def test_entrar_partida_cria_participacao_e_atualiza_contador(client, app):
             jogador_id,
             segundo_jogador_id
         ]
+        assert db.execute(
+            "SELECT responsavel_id FROM partidas WHERE id = ?",
+            (partida_id,)
+        ).fetchone()["responsavel_id"] == jogador_id
 
     resposta_duplicada = client.post(
         f"/poker/{partida_id}/entrar?idJogador={jogador_id}"
     )
     assert resposta_duplicada.status_code == 409
+
+
+def test_iniciar_partida_distribui_duas_cartas_sem_repeticao(client, app):
+    with app.app_context():
+        db = get_db()
+        jogadores = [
+            db.execute(
+                "INSERT INTO jogadores (nome, email, senha) VALUES (?, ?, ?)",
+                (f"Jogador {indice}", f"jogador{indice}@poker.com", "hash")
+            ).lastrowid
+            for indice in range(2)
+        ]
+        partida_id = db.execute(
+            "INSERT INTO partidas (nome, capacidade) VALUES (?, ?)",
+            ("Mesa para iniciar", 6)
+        ).lastrowid
+        db.commit()
+
+    for jogador_id in jogadores:
+        assert client.post(
+            f"/poker/{partida_id}/entrar?idJogador={jogador_id}"
+        ).status_code == 201
+
+    response = client.post(
+        f"/poker/{partida_id}/iniciar?idJogador={jogadores[0]}"
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["dados"] == {
+        "idPartida": partida_id,
+        "status": "em_andamento",
+        "participantes": 2,
+        "cartasPorJogador": 2
+    }
+
+    tentativa_repetida = client.post(
+        f"/poker/{partida_id}/iniciar?idJogador={jogadores[0]}"
+    )
+    assert tentativa_repetida.status_code == 409
+
+    with app.app_context():
+        db = get_db()
+        partida = db.execute(
+            "SELECT status, participantes FROM partidas WHERE id = ?",
+            (partida_id,)
+        ).fetchone()
+        cartas = db.execute(
+            """
+            SELECT jogador_id, valor, naipe, posicao
+            FROM cartas WHERE partida_id = ?
+            ORDER BY jogador_id, posicao
+            """,
+            (partida_id,)
+        ).fetchall()
+
+        assert partida["status"] == "em_andamento"
+        assert partida["participantes"] == 2
+        assert len(cartas) == 4
+        assert [carta["jogador_id"] for carta in cartas] == [
+            jogadores[0], jogadores[0], jogadores[1], jogadores[1]
+        ]
+        assert len({(carta["valor"], carta["naipe"]) for carta in cartas}) == 4
+
+
+def test_iniciar_partida_rejeita_nao_responsavel_e_poucos_jogadores(client, app):
+    with app.app_context():
+        db = get_db()
+        jogadores = [
+            db.execute(
+                "INSERT INTO jogadores (nome, email, senha) VALUES (?, ?, ?)",
+                (f"Jogador {indice}", f"iniciar{indice}@poker.com", "hash")
+            ).lastrowid
+            for indice in range(2)
+        ]
+        partida_id = db.execute(
+            "INSERT INTO partidas (nome) VALUES (?)",
+            ("Mesa incompleta",)
+        ).lastrowid
+        db.execute(
+            "INSERT INTO participantes (partida_id, jogador_id) VALUES (?, ?)",
+            (partida_id, jogadores[0])
+        )
+        db.execute(
+            "UPDATE partidas SET responsavel_id = ? WHERE id = ?",
+            (jogadores[0], partida_id)
+        )
+        db.commit()
+
+    nao_responsavel = client.post(
+        f"/poker/{partida_id}/iniciar?idJogador={jogadores[1]}"
+    )
+    assert nao_responsavel.status_code == 403
+
+    poucos_jogadores = client.post(
+        f"/poker/{partida_id}/iniciar?idJogador={jogadores[0]}"
+    )
+    assert poucos_jogadores.status_code == 409
+    assert "pelo menos 2 jogadores" in poucos_jogadores.get_json()["mensagem"]
+
+
+def test_iniciar_partida_valida_id_do_responsavel(client, app):
+    with app.app_context():
+        db = get_db()
+        partida_id = db.execute(
+            "INSERT INTO partidas (nome) VALUES (?)",
+            ("Mesa sem responsável",)
+        ).lastrowid
+        db.commit()
+
+    for query, status_code in [("", 400), ("?idJogador=abc", 400), ("?idJogador=999", 404)]:
+        response = client.post(f"/poker/{partida_id}/iniciar{query}")
+        assert response.status_code == status_code
+
+
+def test_create_tables_adiciona_responsavel_a_banco_existente(tmp_path):
+    caminho_banco = tmp_path / "banco_antigo.db"
+    conexao = sqlite3.connect(caminho_banco)
+    conexao.executescript("""
+        CREATE TABLE jogadores (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nome TEXT NOT NULL,
+            email TEXT NOT NULL UNIQUE,
+            senha TEXT NOT NULL
+        );
+        CREATE TABLE partidas (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nome TEXT NOT NULL,
+            participantes INTEGER NOT NULL DEFAULT 0,
+            capacidade INTEGER NOT NULL DEFAULT 6,
+            status TEXT NOT NULL DEFAULT 'aberta'
+        );
+        CREATE TABLE participantes (
+            partida_id INTEGER NOT NULL,
+            jogador_id INTEGER NOT NULL,
+            PRIMARY KEY (partida_id, jogador_id)
+        );
+    """)
+
+    from app.database import create_tables
+    create_tables(conexao)
+
+    colunas = {
+        coluna[1]
+        for coluna in conexao.execute("PRAGMA table_info(partidas)")
+    }
+    assert "responsavel_id" in colunas
+    assert conexao.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'cartas'"
+    ).fetchone() is not None
+    conexao.close()
 
 
 @pytest.mark.parametrize("query,status_code", [
