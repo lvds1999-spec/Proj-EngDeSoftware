@@ -50,7 +50,10 @@ partidas de exemplo automaticamente.
   partida, disponibilidade de vagas, estado da partida e participação duplicada.
 - Registro da associação jogador-partida e atualização do contador de
   participantes na mesma transação.
-- Criação automática das tabelas SQLite de jogadores, partidas e participantes.
+- Início de partida pelo primeiro jogador que entrou na mesa, com mínimo de dois
+  participantes e distribuição persistida de duas cartas privadas por jogador.
+- Criação automática das tabelas SQLite de jogadores, partidas, participantes e
+  cartas.
 - Carga idempotente de partidas de exemplo em desenvolvimento.
 - Testes automatizados com pytest.
 
@@ -129,6 +132,24 @@ o contador da partida e retorna HTTP `201`. O endpoint rejeita:
 - jogador que já participa da partida (`409`);
 - partida lotada ou que não esteja aberta (`409`).
 
+### `POST /poker/{idPartida}/iniciar?idJogador={idJogador}`
+
+Inicia uma partida aberta. O primeiro jogador que entrou na mesa é considerado
+responsável e deve informar seu identificador em `idJogador`. São necessários
+pelo menos dois participantes. Exemplo:
+
+```text
+POST /poker/1/iniciar?idJogador=2
+```
+
+Em caso de sucesso, retorna HTTP `200`, altera o estado para `em_andamento` e
+distribui duas cartas privadas por participante, usando um baralho padrão de 52
+cartas embaralhado. As cartas são armazenadas no banco e não são incluídas na
+resposta, que informa a quantidade distribuída por jogador. Partidas inexistentes
+ou jogadores inválidos retornam `404`; um solicitante que não seja responsável
+retorna `403`; mesa sem responsável, com poucos participantes ou já iniciada
+retorna `409`.
+
 ## Partidas de exemplo
 
 Em desenvolvimento, são inseridas partidas com estes nomes e estados:
@@ -154,6 +175,9 @@ O SQLite cria as tabelas automaticamente:
   primária composta (`partida_id`, `jogador_id`) impede vínculos duplicados; as
   chaves estrangeiras removem os vínculos quando o jogador ou a partida são
   excluídos.
+- `partidas.responsavel_id`: jogador que entrou primeiro e pode iniciar a mesa.
+- `cartas`: cartas privadas distribuídas no início; cada jogador recebe duas,
+  sem repetição de cartas na mesma partida.
 
 O arquivo padrão de banco é `poker.db`, ignorado pelo Git.
 

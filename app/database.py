@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS partidas (
     participantes INTEGER NOT NULL DEFAULT 0,
     capacidade INTEGER NOT NULL DEFAULT 6,
     status TEXT NOT NULL DEFAULT 'aberta',
+    responsavel_id INTEGER REFERENCES jogadores (id) ON DELETE SET NULL,
     criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -26,6 +27,18 @@ CREATE TABLE IF NOT EXISTS participantes (
     PRIMARY KEY (partida_id, jogador_id),
     FOREIGN KEY (partida_id) REFERENCES partidas (id) ON DELETE CASCADE,
     FOREIGN KEY (jogador_id) REFERENCES jogadores (id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS cartas (
+    partida_id INTEGER NOT NULL,
+    jogador_id INTEGER NOT NULL,
+    valor TEXT NOT NULL,
+    naipe TEXT NOT NULL,
+    posicao INTEGER NOT NULL CHECK (posicao IN (1, 2)),
+    PRIMARY KEY (partida_id, jogador_id, posicao),
+    UNIQUE (partida_id, valor, naipe),
+    FOREIGN KEY (partida_id, jogador_id)
+        REFERENCES participantes (partida_id, jogador_id) ON DELETE CASCADE
 );
 """
 
@@ -39,6 +52,18 @@ SAMPLE_MATCHES = (
 
 def create_tables(conn):
     conn.executescript(SCHEMA)
+    # Adiciona a coluna de responsável também em bancos criados antes desta versão.
+    colunas_partidas = {
+        coluna[1] for coluna in conn.execute("PRAGMA table_info(partidas)")
+    }
+    if "responsavel_id" not in colunas_partidas:
+        conn.execute(
+            """
+            ALTER TABLE partidas
+            ADD COLUMN responsavel_id INTEGER
+            REFERENCES jogadores (id) ON DELETE SET NULL
+            """
+        )
     conn.commit()
 
 def seed_sample_matches(conn):
