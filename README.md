@@ -41,7 +41,7 @@ partidas de exemplo automaticamente.
 ## Funcionalidades atuais
 
 - Respostas JSON padronizadas para sucesso e erro.
-- Endpoint raiz e endpoint de status da API.
+- Endpoints raiz e de status da API.
 - Cadastro de jogadores com validação de campos e formato do e-mail.
 - Verificação de e-mails duplicados sem diferenciar maiúsculas de minúsculas.
 - Armazenamento de senha usando hash; a senha original não é gravada.
@@ -57,11 +57,29 @@ partidas de exemplo automaticamente.
 - Carga idempotente de partidas de exemplo em desenvolvimento.
 - Testes automatizados com pytest.
 
+## Modalidade
+
+A aplicação implementa partidas de pôquer. Ao iniciar uma partida, usa um
+baralho padrão de 52 cartas (13 valores e quatro naipes), embaralhado, e
+distribui duas cartas privadas para cada participante. Uma mesma carta não pode
+ser distribuída mais de uma vez na partida.
+
 ## Endpoints
 
 Todas as respostas usam JSON. Em geral, o corpo contém `sucesso` e `mensagem`;
 operações com dados também podem incluir `dados`. Respostas de erro incluem
 `erro`.
+
+Endpoints disponíveis:
+
+| Método | Caminho | Descrição |
+| --- | --- | --- |
+| `GET` | `/` | Verifica se a API está em execução. |
+| `GET` | `/poker/status` | Consulta o estado e a versão da API. |
+| `POST` | `/poker/cadastro` | Cadastra um jogador. |
+| `GET` | `/poker/partidasAbertas` | Lista partidas abertas que ainda têm vagas. |
+| `POST` | `/poker/{idPartida}/entrar?idJogador={idJogador}` | Adiciona um jogador à partida. |
+| `POST` | `/poker/{idPartida}/iniciar?idJogador={idJogador}` | Inicia a partida e distribui as cartas. |
 
 ### `GET /`
 
@@ -108,13 +126,17 @@ Cadastra um jogador. Envie `nome`, `email` e `senha` em um corpo JSON:
 O nome, e-mail e senha são obrigatórios; o e-mail deve ter formato válido e a
 senha deve ter pelo menos seis caracteres. Em caso de sucesso, retorna HTTP
 `201` e o identificador do jogador. E-mail já cadastrado retorna `409`;
-conteúdo ou campos inválidos retornam `400`.
+corpo que não seja um objeto JSON, campos ausentes ou vazios, e-mail inválido
+ou senha com menos de seis caracteres retornam `400`. Espaços no início e no
+fim do nome e do e-mail são removidos antes do cadastro; e-mails duplicados são
+comparados sem diferenciar maiúsculas de minúsculas.
 
 ### `GET /poker/partidasAbertas`
 
 Lista as partidas com status `aberta` e participantes abaixo da capacidade.
 Cada item inclui `id`, `nome`, `participantes` e `capacidade`. A lista é
-ordenada pelo identificador da partida.
+ordenada pelo identificador da partida. A consulta não recebe parâmetros;
+partidas lotadas ou que não estejam abertas não são listadas.
 
 ### `POST /poker/{idPartida}/entrar?idJogador={idJogador}`
 
@@ -132,11 +154,14 @@ o contador da partida e retorna HTTP `201`. O endpoint rejeita:
 - jogador que já participa da partida (`409`);
 - partida lotada ou que não esteja aberta (`409`).
 
+O jogador precisa existir, e o identificador deve ser um inteiro positivo.
+
 ### `POST /poker/{idPartida}/iniciar?idJogador={idJogador}`
 
 Inicia uma partida aberta. O primeiro jogador que entrou na mesa é considerado
 responsável e deve informar seu identificador em `idJogador`. São necessários
-pelo menos dois participantes. Exemplo:
+pelo menos dois participantes. O identificador do jogador deve ser um inteiro
+positivo. Exemplo:
 
 ```text
 POST /poker/1/iniciar?idJogador=2
@@ -193,8 +218,13 @@ python -m pytest -q
 Os testes cobrem cadastro e validações, hash de senha, consulta de partidas,
 integridade dos vínculos, entrada de múltiplos jogadores, consistência entre o
 contador da partida e suas participações registradas, início de partidas e
-distribuição de cartas. Um teste de ponta a ponta percorre cadastro, entrada de
-três jogadores, início da partida e consulta das mesas abertas.
+distribuição de cartas (duas por jogador, sem repetição e sem exposição na
+resposta), além das respostas de erro dos endpoints. O teste ponta a ponta
+exercita o fluxo completo: cadastro de três jogadores, consulta e escolha de
+uma partida aberta, entrada dos três jogadores com conferência do contador,
+início pelo primeiro participante, validação do estado e das cartas persistidas
+e confirmação de que a partida iniciada não aparece mais na consulta de mesas
+abertas.
 
 Para executar somente o teste de ponta a ponta:
 
