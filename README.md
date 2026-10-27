@@ -192,7 +192,15 @@ python -m pytest -q
 
 Os testes cobrem cadastro e validações, hash de senha, consulta de partidas,
 integridade dos vínculos, entrada de múltiplos jogadores, consistência entre o
-contador da partida e suas participações registradas, e respostas de erro.
+contador da partida e suas participações registradas, início de partidas e
+distribuição de cartas. Um teste de ponta a ponta percorre cadastro, entrada de
+três jogadores, início da partida e consulta das mesas abertas.
+
+Para executar somente o teste de ponta a ponta:
+
+```powershell
+python -m pytest tests/test_fluxo_completo.py -q
+```
 
 ## Atualização desta documentação
 
